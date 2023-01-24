@@ -50,6 +50,16 @@ class ResultTable
         );
     }
 
+    public function GetByPost( $post_id )
+    {
+      return $this->wpdb->get_results(
+         "SELECT *
+         FROM `" . $this->wpdb->prefix . "wpispring_results`
+         WHERE `post_id` = " . $post_id,
+         ARRAY_A
+        );
+    }
+
     public function GetGroupPosts()
     {
       return $this->wpdb->get_results(

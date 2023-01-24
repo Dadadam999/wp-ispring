@@ -4,10 +4,12 @@
  * @author Bogdanov Andrey (swarzone2100@yandex.ru)
  */
 namespace wpispring;
-
- use wpispring\Tables\ResultTable;
-
+use wpispring\Tables\ResultTable;
 use WP_REST_Request;
+
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 
 class Main
 {
@@ -29,7 +31,7 @@ class Main
         new ResultTable;
         $this->tableMananger = new TableMananger;
         $this->apiInit();
-        $this->InitWP();
+        $this->download();
         $this->scriptAdd();
         $this->menuAdd();
         return $this;
@@ -91,7 +93,7 @@ class Main
 
     function ispring_settings_callback()
     {
-       $html = '';
+       //$html = $xml->name . ' is ' . $xml->age . ' years old.';
        $html .= '<div class="container">';
        $html .= '<h1 class="h3 text-center my-5">Скачать статистику тестов iSpring</h1>';
        $html .= '<div style=" max-width: 500px; margin: 0px auto;">';
@@ -99,8 +101,7 @@ class Main
        $html .=  wp_nonce_field('wpispringSettingsNonce-wpnp', 'wpispringSettingsNonce');
        $html .= '<label style="margin-top:20px; min-width: 50%;" for="wpispringselecpost" class="form-label">Выберите мероприятие по которому необходимо выгрузить тест:</label>';
        $html .= '<br>';
-       $html .= '<select style="min-width: 50%;" name="select" name="wpispringselectpost" class="form-control form-control-sm">';
-
+       $html .= '<select style="min-width: 50%;" name="wpispringselectpost" class="form-control form-control-sm">';
        $group_posts_id = $this->tableMananger->resultTable->GetGroupPosts();
 
        foreach ($group_posts_id as $group_post_id)
@@ -119,149 +120,151 @@ class Main
        echo $html;
     }
 
-    protected function InitWP()
+    public function xmlToStr( $xml )
     {
-      add_action('init', function()
-      {
-          $this->user_id = get_current_user_id();
+        $output = '';
+        $results = simplexml_load_string( $xml );
 
-          $file = '<?xml version="1.0" encoding="UTF-8"?>
-<quizReport xmlns="http://www.ispringsolutions.com/ispring/quizbuilder/quizresults" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.ispringsolutions.com/ispring/quizbuilder/quizresults quizReport.xsd" version="2">
-   <quizSettings quizType="graded" maxScore="20" maxNormalizedScore="100" timeLimit="0">
-      <passingPercent>80</passingPercent>
-   </quizSettings>
-   <summary score="10" percent="50" time="10" finishTimestamp="26 января 2022 г. 13:30" passed="false" />
-   <questions>
-      <multipleChoiceQuestion id="z5q2y6e36egh-s0x4agh84d3c" status="incorrect" evaluationEnabled="true" maxPoints="10" maxAttempts="1" awardedPoints="0" usedAttempts="1">
-         <direction>
-            <text><![CDATA[Выберите правильный вариант ответа1:]]></text>
-         </direction>
-         <feedback>
-            <text><![CDATA[Вы ответили неверно.]]></text>
-         </feedback>
-         <answers correctAnswerIndex="0" userAnswerIndex="2">
-            <answer>
-               <text><![CDATA[Вариант 1]]></text>
-            </answer>
-            <answer>
-               <text><![CDATA[Вариант 2]]></text>
-            </answer>
-            <answer>
-               <text><![CDATA[Вариант 3]]></text>
-            </answer>
-         </answers>
-      </multipleChoiceQuestion>
-      <multipleChoiceQuestion id="aopbsdt5zzpc-22zh5heiyeqs" status="correct" evaluationEnabled="true" maxPoints="10" maxAttempts="1" awardedPoints="10" usedAttempts="1">
-         <direction>
-            <text><![CDATA[Выберите правильный вариант ответа2:]]></text>
-         </direction>
-         <feedback>
-            <text><![CDATA[Вы ответили верно.]]></text>
-         </feedback>
-         <answers correctAnswerIndex="0" userAnswerIndex="0">
-            <answer>
-               <text><![CDATA[Вариант 1]]></text>
-            </answer>
-            <answer>
-               <text><![CDATA[Вариант 2]]></text>
-            </answer>
-            <answer>
-               <text><![CDATA[Вариант 3]]></text>
-            </answer>
-         </answers>
-      </multipleChoiceQuestion>
-   </questions>
-   <groups>
-      <group name="Группа вопросов 1;modul-test" passingScore="16" awardedScore="10" passingPercent="80" awardedPercent="50" totalQuestions="2" answeredQuestions="1" />
-   </groups>
-</quizReport>';
+        foreach ( $results->questions->children() as $question )
+        {
+            $output .=  $question->direction->text . chr( 13 ) . chr( 10 );
+            $counter = 0;
+            $selected = $question->answers['userAnswerIndex'];
 
-          $results = simplexml_load_string($file);
-        //  echo '<pre>'. var_dump($results->questions) . '</pre>';
-      });
+            foreach ($question->answers->children() as $answer)
+            {
+                $output .= $answer->text;
 
-      return $this;
+                if( $selected == $counter )
+                    $output .= ' - выбрал пользователь ';
+
+                $output .= chr( 13 ) . chr( 10 );
+                $counter++;
+            }
+
+            $output .= chr( 13 ) . chr( 10 );
+        }
+
+        return $output;
     }
 
     protected function download()
     {
       add_action('plugins_loaded', function()
       {
-          // if (wp_verify_nonce($_POST['poststat-download'], 'poststat-download-wpnp') === false)
-          //     $this->notice('error', $this->fail_nonce_notice);
-          // else
-          // {
-          //     $post_id = (int)$_POST['poststat-download-post'];
-          //
-          //     $end_time = $this->wpdb->get_results(
-          //         "SELECT t.meta_value
-          //             FROM `".$this->wpdb->prefix."postmeta` AS t
-          //             WHERE t.post_id = ".$post_id."
-          //             AND t.meta_key = 'evcal_erow'",
-          //         ARRAY_A
-          //     );
-          //
-          //     if (!empty($end_time))
-          //       $end_time = (int)$end_time[0]['meta_value'] + 3600;
-          //     else
-          //       $end_time = 0;
-          //
-          //     if (empty($presence)) {
-          //         $this->notice(
-          //             'warning',
-          //             'Статистика по указанному мероприятию отсутствует.'
-          //         );
-          //         return;
-          //     }
-          //
-          //     if (!file_exists($this->path.'temp/')) {
-          //
-          //         if (!mkdir($this->path.'temp/')) {
-          //
-          //             $this->notice(
-          //                 'error',
-          //                 'Нет доступа к временной директории. Пожалуйста, обратитесь к администратору.'
-          //             );
-          //
-          //             return;
-          //
-          //         }
-          //
-          //     }
-          //
-          //     $ch_arr = array_merge(range('a', 'z'), range(0, 9));
-          //
-          //     do {
-          //
-          //         $filename = '';
-          //
-          //         for ($i = 0; $i < 32; $i++) {
-          //
-          //             $filename .= $ch_arr[rand(0, count($ch_arr) - 1)];
-          //
-          //         }
-          //
-          //         $filename .= '.csv';
-          //
-          //     } while (file_exists($this->path.'temp/'.$filename));
-          //
-          //     $writer = IOFactory::createWriter($spreadsheet, 'Xlsx');
-          //     $writer->save($this->path.'temp/'.$filename);
-          //
-          //     unset($spreadsheet);
-          //     unset($writer);
-          //
-          //     $file = file_get_contents($this->path.'temp/'.$filename);
-          //
-          //     unlink($this->path.'temp/'.$filename);
-          //
-          //     header('Content-type: application; charset=utf-8');
-          //     header('Content-disposition: attachment; filename=statistics.csv');
-          //
-          //     echo $file;
-          //
-          //     die;
-          //}
+          if( !isset( $_POST['wpispringselectpost'] ) )
+            if( empty( $_POST['wpispringselectpost'] ) )
+                return '';
+
+          if ( wp_verify_nonce( $_POST['wpispringSettingsNonce'], 'wpispringSettingsNonce-wpnp' ) )
+          {
+              $post_id = $_POST['wpispringselectpost'];
+              $path = plugin_dir_path(__FILE__);
+
+              $spreadsheet = new Spreadsheet;
+              $worksheet = $spreadsheet->getSheet(0);
+              $worksheet->setTitle('Модули');
+              $header_row = 1;
+
+              $header = [
+                 'Моудль id',
+                 'Название модуля',
+                 'Название теста',
+                 'Очки',
+                 'Дата ответа',
+                 'Результаты',
+                 'Юзер id',
+                 'Дата регистрации',
+                 'Телефон',
+                 'Email',
+                 'Фамилия',
+                 'Имя',
+                 'Отчество',
+                 'Пол',
+                 'Страна',
+                 'Регион',
+                 'Город',
+                 'Основная специальность',
+                 'Место работы',
+                 'Должность',
+              ];
+
+              foreach ($header as $key => $value)
+                  $worksheet->getCellByColumnAndRow($key + 1, $header_row)->setValueExplicit($value, DataType::TYPE_STRING);
+
+              $row_ref = 2;
+
+              $results = $this->tableMananger->resultTable->GetByPost( $post_id );
+
+              foreach ( $results as $result )
+              {
+                  $row_user = array();
+                  $user_meta = get_userdata( ( int ) $result['user_id'] );
+                  $user = get_user_by('id', ( int )$result['user_id'] );
+
+                  array_push(
+                      $row_user,
+                      $result['post_id'],
+                      get_post( $result['post_id'] )->post_title,
+                      $result['name'],
+                      $result['score'],
+                      $result['date'],
+                      $this->xmlToStr( $result['results'] ),
+                      $result['user_id'],
+                      $user->user_registered,
+                      $user_meta->mobile_number,
+                      $user->user_email,
+                      $user_meta->last_name,
+                      $user_meta->first_name,
+                      $user_meta->patronymic,
+                      ( empty( $user_meta->sex[0] ) ? 'Женский' : $user_meta->sex[0] ),
+                      $user_meta->country,
+                      ( is_array( $user_meta->region ) ? $user_meta->region[0] : $user_meta->region ),
+                      ( $user_meta->city === 'Другой' ? $user_meta->city_manual : $user_meta->city ),
+                      $user_meta->speciality,
+                      ( $user_meta->workplace === 'Другое' || empty( $user_meta->workplace ) ? $user_meta->workplace_manual : $user_meta->workplace ),
+                      $user_meta->post_in_workplace
+                  );
+
+                  foreach ($row_user as $key => $value)
+                      $worksheet->getCellByColumnAndRow($key + 1, $row_ref)->setValueExplicit($value, DataType::TYPE_STRING);
+
+                  $row_ref++;
+              }
+
+              if (!file_exists($path . 'temp/'))
+              {
+                  if (!mkdir($path . 'temp/'))
+                  {
+                      echo 'Нет доступа к временной директории. Пожалуйста, обратитесь к администратору.';
+                      return;
+                  }
+              }
+
+              $ch_arr = array_merge(range('a', 'z'), range(0, 9));
+
+              do
+              {
+                  $filename = '';
+
+                  for ($i = 0; $i < 32; $i++)
+                      $filename .= $ch_arr[rand(0, count($ch_arr) - 1)];
+
+                  $filename .= '.xlsx';
+              }
+              while (file_exists($path.'temp/'.$filename));
+
+              $writer = IOFactory::createWriter($spreadsheet, 'Xlsx');
+              $writer->save($path.'temp/'.$filename);
+              unset($spreadsheet);
+              unset($writer);
+              $file = file_get_contents($path.'temp/'.$filename);
+              unlink($path.'temp/'.$filename);
+              header('Content-type: application; charset=utf-8');
+              header('Content-disposition: attachment; filename=statistics.xlsx');
+              echo $file;
+              die;
+          }
       });
 
       return $this;
